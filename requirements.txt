@@ -1,4 +1,5 @@
 Flask
 websocket-client
-gunicorn  # Thêm Gunicorn để chạy ứng dụng
+
+
 
