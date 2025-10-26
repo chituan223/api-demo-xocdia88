@@ -22,16 +22,16 @@ history = []
 MAX_HISTORY = 50
 
 # ================= Hàm dự đoán cơ bản =================
-def get_tai_xiu(d1, d2, d3):
-    total = d1 + d2 + d3
-    return "Xỉu" if total <= 10 else "Tài"
+def get_tai_xiu(d1,d2,d3):
+    total = d1+d2+d3
+    return "Xỉu" if total<=10 else "Tài"
 
-# ================= 10 Thuật toán dự đoán =================
+# ================= 10 THUẬT TOÁN =================
 def algo1_weightedRecent(hist):
     if not hist: return "Tài"
-    t = sum((i+1)/len(hist) for i, v in enumerate(hist) if v=="Tài")
-    x = sum((i+1)/len(hist) for i, v in enumerate(hist) if v=="Xỉu")
-    return "Tài" if t >= x else "Xỉu"
+    t=sum((i+1)/len(hist) for i,v in enumerate(hist) if v=="Tài")
+    x=sum((i+1)/len(hist) for i,v in enumerate(hist) if v=="Xỉu")
+    return "Tài" if t>=x else "Xỉu"
 
 def algo2_expDecay(hist, decay=0.6):
     if not hist: return "Tài"
@@ -100,23 +100,25 @@ def algo10_freqRatio(hist):
 algos=[algo1_weightedRecent,algo2_expDecay,algo3_longChainReverse,algo4_windowMajority,
        algo5_alternation,algo6_patternRepeat,algo7_mirror,algo8_entropy,algo9_momentum,algo10_freqRatio]
 
-# ================= Hàm hybrid dự đoán + độ tin cậy =================
-def hybrid_predict(hist, last_dice_sum):
+# ================= Hàm dự đoán hybrid + confidence biến thiên =================
+def hybrid_predict(hist,last_dice_sum):
     if not hist: return {"prediction":"Tài","confidence":50}
     scoreT=scoreX=0
-    votes=[]
     for fn in algos:
         v=fn(hist)
-        votes.append(v)
         if v=="Tài": scoreT+=1
         else: scoreX+=1
     pred="Tài" if scoreT>=scoreX else "Xỉu"
-    base_conf = (max(scoreT,scoreX)/len(algos))*100
-    dist = abs(last_dice_sum - 10)
-    confidence = min(100, max(50, int(base_conf + dist*5)))  # Biến động theo tổng xúc xắc
-    return {"prediction":pred,"confidence":confidence,"votes":votes}
+    base_conf=(max(scoreT,scoreX)/len(algos))*50+50  # 50~100%
+    # Biến thiên theo tổng xúc xắc
+    if pred=="Tài":
+        confidence=base_conf+(last_dice_sum-11)*4
+    else:
+        confidence=base_conf+(10-last_dice_sum)*4
+    confidence=max(50,min(99,int(confidence)))
+    return {"prediction":pred,"confidence":confidence}
 
-# ================= Xử lý message WebSocket =================
+# ================= Xử lý WebSocket =================
 def on_message(ws,message):
     global latest_result,history
     try:
@@ -132,17 +134,16 @@ def on_message(ws,message):
                     d3=result.get("Dice3",-1)
                     if d1!=-1 and d2!=-1 and d3!=-1:
                         tx=get_tai_xiu(d1,d2,d3)
-                        total=d1+d2+d3
                         with lock:
                             latest_result["Phien"]=session_id
                             latest_result["Xuc_xac_1"]=d1
                             latest_result["Xuc_xac_2"]=d2
                             latest_result["Xuc_xac_3"]=d3
-                            # Cập nhật lịch sử
+                            # cập nhật lịch sử
                             history.append(tx)
                             if len(history)>MAX_HISTORY: history.pop(0)
-                            # Dự đoán
-                            pred=hybrid_predict(history,total)
+                            # dự đoán
+                            pred=hybrid_predict(history,d1+d2+d3)
                             latest_result["Du_doan"]=pred["prediction"]
                             latest_result["Do_tin_cay"]=pred["confidence"]
     except Exception as e:
@@ -182,7 +183,7 @@ def get_latest():
 
 @app.route("/")
 def index():
-    return "✅ API Tài Xỉu Phiên + Xúc xắc + Dự đoán đang chạy | /api/taixiumd5"
+    return "✅ API Tài Xỉu Phiên + Xúc xắc + Dự đoán (tỷ lệ thay đổi) đang chạy | /api/taixiumd5"
 
 # ================= Main =================
 if __name__=="__main__":
