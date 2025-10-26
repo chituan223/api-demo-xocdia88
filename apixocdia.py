@@ -19,20 +19,19 @@ latest_result = {
 }
 lock = threading.Lock()
 history = []
-
 MAX_HISTORY = 50
 
-# ================= Hàm dự đoán Tài/Xỉu =================
-def get_tai_xiu(d1,d2,d3):
-    total = d1+d2+d3
-    return "Xỉu" if total<=10 else "Tài"
+# ================= Hàm dự đoán cơ bản =================
+def get_tai_xiu(d1, d2, d3):
+    total = d1 + d2 + d3
+    return "Xỉu" if total <= 10 else "Tài"
 
-# ================= 10 THUẬT TOÁN DỰ ĐOÁN =================
+# ================= 10 Thuật toán dự đoán =================
 def algo1_weightedRecent(hist):
     if not hist: return "Tài"
-    t=sum((i+1)/len(hist) for i,v in enumerate(hist) if v=="Tài")
-    x=sum((i+1)/len(hist) for i,v in enumerate(hist) if v=="Xỉu")
-    return "Tài" if t>=x else "Xỉu"
+    t = sum((i+1)/len(hist) for i, v in enumerate(hist) if v=="Tài")
+    x = sum((i+1)/len(hist) for i, v in enumerate(hist) if v=="Xỉu")
+    return "Tài" if t >= x else "Xỉu"
 
 def algo2_expDecay(hist, decay=0.6):
     if not hist: return "Tài"
@@ -101,7 +100,8 @@ def algo10_freqRatio(hist):
 algos=[algo1_weightedRecent,algo2_expDecay,algo3_longChainReverse,algo4_windowMajority,
        algo5_alternation,algo6_patternRepeat,algo7_mirror,algo8_entropy,algo9_momentum,algo10_freqRatio]
 
-def hybrid_predict(hist):
+# ================= Hàm hybrid dự đoán + độ tin cậy =================
+def hybrid_predict(hist, last_dice_sum):
     if not hist: return {"prediction":"Tài","confidence":50}
     scoreT=scoreX=0
     votes=[]
@@ -111,8 +111,10 @@ def hybrid_predict(hist):
         if v=="Tài": scoreT+=1
         else: scoreX+=1
     pred="Tài" if scoreT>=scoreX else "Xỉu"
-    conf=int((max(scoreT,scoreX)/len(algos))*100)
-    return {"prediction":pred,"confidence":conf,"votes":votes}
+    base_conf = (max(scoreT,scoreX)/len(algos))*100
+    dist = abs(last_dice_sum - 10)
+    confidence = min(100, max(50, int(base_conf + dist*5)))  # Biến động theo tổng xúc xắc
+    return {"prediction":pred,"confidence":confidence,"votes":votes}
 
 # ================= Xử lý message WebSocket =================
 def on_message(ws,message):
@@ -130,6 +132,7 @@ def on_message(ws,message):
                     d3=result.get("Dice3",-1)
                     if d1!=-1 and d2!=-1 and d3!=-1:
                         tx=get_tai_xiu(d1,d2,d3)
+                        total=d1+d2+d3
                         with lock:
                             latest_result["Phien"]=session_id
                             latest_result["Xuc_xac_1"]=d1
@@ -139,7 +142,7 @@ def on_message(ws,message):
                             history.append(tx)
                             if len(history)>MAX_HISTORY: history.pop(0)
                             # Dự đoán
-                            pred=hybrid_predict(history)
+                            pred=hybrid_predict(history,total)
                             latest_result["Du_doan"]=pred["prediction"]
                             latest_result["Do_tin_cay"]=pred["confidence"]
     except Exception as e:
