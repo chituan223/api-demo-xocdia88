@@ -1,2 +1,4 @@
-Flask==2.3.5
-websocket-client==1.6.2
+Flask
+websocket-client
+gunicorn  # Thêm Gunicorn để chạy ứng dụng
+
