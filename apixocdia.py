@@ -167,7 +167,8 @@ def layer_15_shortest_run(h: HistoryList) -> Tuple[str, float]:
 def advanced_pentter_ai(history: HistoryList) -> Dict[str, Any]:
     """Tổng hợp 15 lớp phân tích để đưa ra dự đoán cuối cùng."""
     if len(history) < 6:
-        return {"du_doan": "Tài", "do_tin_cay": 70.0}
+        # Nếu lịch sử chưa đủ dài, đưa ra một dự đoán cơ sở
+        return {"du_doan": "Tài", "do_tin_cay": 55.0}
 
     # Danh sách 15 layer: (logic_function, min_history_length)
     all_layers = [
@@ -197,23 +198,26 @@ def advanced_pentter_ai(history: HistoryList) -> Dict[str, Any]:
             total_weight += weight
 
     if total_weight == 0:
-        # Fallback nếu lịch sử quá ngắn
         return {"du_doan": history[-1], "do_tin_cay": 50.0}
         
     du_doan = "Tài" if score_tai > score_xiu else "Xỉu"
     
-    # Tính toán độ tin cậy dựa trên biên độ thắng/thua của các votes
+    # ================= ĐIỀU CHỈNH LOGIC TÍNH ĐỘ TIN CẬY =================
     winning_score = max(score_tai, score_xiu)
     losing_score = min(score_tai, score_xiu)
+
+    # Tính toán Tỷ lệ Biên độ (Margin Ratio): (Điểm Thắng - Điểm Thua) / Tổng Điểm
+    margin = (winning_score - losing_score) / total_weight
+
+    # Đặt Base Confidence là 50% (cơ sở cho mọi dự đoán)
+    # Cộng thêm Biên độ Khuếch đại (Margin * 50) - Margin càng lớn, Boost càng cao
+    # Công thức này đảm bảo tỷ lệ nhảy động từ 50.1% lên tới 98%
+    do_tin_cay = 50.0 + (margin * 50)
     
-    # Chuẩn hóa biên độ (0 đến 1)
-    normalized_margin = (winning_score - losing_score) / total_weight
-    
-    # Thiết lập Base Confidence (70%) + Biên độ ảnh hưởng (tối đa 28%)
-    do_tin_cay = 70.0 + (normalized_margin * 28) 
-    
-    # Giới hạn tối đa và làm tròn
+    # Thiết lập Giới hạn (bắt buộc > 50% và <= 98%)
+    do_tin_cay = max(do_tin_cay, 50.1)
     do_tin_cay = round(min(do_tin_cay, 98.0), 1)
+    # ================= END ĐIỀU CHỈNH =================
 
     return {"du_doan": du_doan, "do_tin_cay": do_tin_cay}
 
