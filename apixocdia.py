@@ -167,7 +167,7 @@ def layer_15_shortest_run(h: HistoryList) -> Tuple[str, float]:
 def advanced_pentter_ai(history: HistoryList) -> Dict[str, Any]:
     """Tổng hợp 15 lớp phân tích để đưa ra dự đoán cuối cùng."""
     if len(history) < 6:
-        # Nếu lịch sử chưa đủ dài, đưa ra một dự đoán cơ sở
+        # Nếu lịch sử chưa đủ dài, đưa ra dự đoán cơ sở trung lập.
         return {"du_doan": "Tài", "do_tin_cay": 55.0}
 
     # Danh sách 15 layer: (logic_function, min_history_length)
@@ -202,22 +202,23 @@ def advanced_pentter_ai(history: HistoryList) -> Dict[str, Any]:
         
     du_doan = "Tài" if score_tai > score_xiu else "Xỉu"
     
-    # ================= ĐIỀU CHỈNH LOGIC TÍNH ĐỘ TIN CẬY =================
+    # ================= LOGIC TÍNH ĐỘ TIN CẬY MỚI (DYNAMIC SWING) =================
     winning_score = max(score_tai, score_xiu)
     losing_score = min(score_tai, score_xiu)
 
-    # Tính toán Tỷ lệ Biên độ (Margin Ratio): (Điểm Thắng - Điểm Thua) / Tổng Điểm
+    # 1. Tính toán Tỷ lệ Biên độ (Margin Ratio): (Điểm Thắng - Điểm Thua) / Tổng Điểm
+    # Tỷ lệ này nằm trong khoảng [0, 1]
     margin = (winning_score - losing_score) / total_weight
 
-    # Đặt Base Confidence là 50% (cơ sở cho mọi dự đoán)
-    # Cộng thêm Biên độ Khuếch đại (Margin * 50) - Margin càng lớn, Boost càng cao
-    # Công thức này đảm bảo tỷ lệ nhảy động từ 50.1% lên tới 98%
-    do_tin_cay = 50.0 + (margin * 50)
+    # 2. Base Confidence luôn là 50.0 (điểm ngẫu nhiên cơ sở)
+    # 3. Khuếch đại Biên độ (margin * 48): Margin càng lớn (đồng thuận càng cao), Boost càng cao, 
+    # Tối đa 50 + 48 = 98.0
+    do_tin_cay = 50.0 + (margin * 48) 
     
-    # Thiết lập Giới hạn (bắt buộc > 50% và <= 98%)
+    # 4. Đảm bảo tỷ lệ luôn trên 50% (trừ khi total_weight = 0) và dưới 98%
     do_tin_cay = max(do_tin_cay, 50.1)
     do_tin_cay = round(min(do_tin_cay, 98.0), 1)
-    # ================= END ĐIỀU CHỈNH =================
+    # ================= END LOGIC MỚI =================
 
     return {"du_doan": du_doan, "do_tin_cay": do_tin_cay}
 
