@@ -14,178 +14,183 @@ latest_result = {
     "Xuc_xac_1": -1,
     "Xuc_xac_2": -1,
     "Xuc_xac_3": -1,
-    "Du_doan": "Đang phân tích...",
-    "Do_tin_cay": 0
+    "Ket_qua": None,
+    "Du_doan_tiep": "Đang phân tích...",
+    "Do_tin_cay": 0,
+    "id": "daubuoi"
 }
 lock = threading.Lock()
 history = []
 MAX_HISTORY = 50
 
-# ================= Hàm dự đoán cơ bản =================
-def get_tai_xiu(d1,d2,d3):
-    total = d1+d2+d3
-    return "Xỉu" if total<=10 else "Tài"
 
-# ================= 10 THUẬT TOÁN =================
-def algo1_weightedRecent(hist):
-    if not hist: return "Tài"
-    t=sum((i+1)/len(hist) for i,v in enumerate(hist) if v=="Tài")
-    x=sum((i+1)/len(hist) for i,v in enumerate(hist) if v=="Xỉu")
-    return "Tài" if t>=x else "Xỉu"
+# ================= Hàm tính Tài/Xỉu =================
+def get_tai_xiu(d1, d2, d3):
+    total = d1 + d2 + d3
+    return "Xỉu" if total <= 10 else "Tài"
 
-def algo2_expDecay(hist, decay=0.6):
-    if not hist: return "Tài"
-    t=x=w=0; w=1
-    for v in reversed(hist):
-        if v=="Tài": t+=w
-        else: x+=w
-        w*=decay
-    return "Tài" if t>x else "Xỉu"
 
-def algo3_longChainReverse(hist,k=3):
-    if not hist: return "Tài"
-    last=hist[-1]; chain=1
-    for v in reversed(hist[:-1]):
-        if v==last: chain+=1
-        else: break
-    if chain>=k:
-        return "Xỉu" if last=="Tài" else "Tài"
-    return last
+# ================= Pentter-AI v4.8 Elite =================
+def pentter_ai_v4_8(history):
+    if len(history) < 6:
+        return {"du_doan": "Tài", "do_tin_cay": 60}
 
-def algo4_windowMajority(hist,window=5):
-    if not hist: return "Tài"
-    win=hist[-window:] if len(hist)>=window else hist
-    return "Tài" if win.count("Tài")>=len(win)/2 else "Xỉu"
-
-def algo5_alternation(hist):
-    if len(hist)<4: return "Tài"
-    flips=sum(1 for i in range(1,4) if hist[-i]!=hist[-i-1])
-    if flips>=3:
-        return "Xỉu" if hist[-1]=="Tài" else "Tài"
-    return hist[-1]
-
-def algo6_patternRepeat(hist):
-    L=len(hist)
-    if L<4: return "Tài"
-    for length in range(2,min(6,L//2)+1):
-        a="".join(hist[-length:])
-        b="".join(hist[-2*length:-length])
-        if a==b: return hist[-length]
-    return algo4_windowMajority(hist,4)
-
-def algo7_mirror(hist):
-    if len(hist)<8: return hist[-1] if hist else "Tài"
-    return "Xỉu" if hist[-4:]==hist[-8:-4] and hist[-1]=="Tài" else hist[-1]
-
-def algo8_entropy(hist):
-    if not hist: return "Tài"
-    t=hist.count("Tài")
-    x=len(hist)-t
-    diff=abs(t-x)
-    if diff<=len(hist)//5: return "Xỉu" if hist[-1]=="Tài" else "Tài"
-    return "Xỉu" if t>x else "Tài"
-
-def algo9_momentum(hist):
-    if len(hist)<2: return "Tài"
-    score=sum(1 if hist[i]==hist[i-1] else -1 for i in range(1,len(hist)))
-    return hist[-1] if score>0 else ("Xỉu" if hist[-1]=="Tài" else "Tài")
-
-def algo10_freqRatio(hist):
-    if not hist: return "Tài"
-    ratio=hist.count("Tài")/len(hist)
-    if ratio>0.62: return "Xỉu"
-    if ratio<0.38: return "Tài"
-    return hist[-1]
-
-algos=[algo1_weightedRecent,algo2_expDecay,algo3_longChainReverse,algo4_windowMajority,
-       algo5_alternation,algo6_patternRepeat,algo7_mirror,algo8_entropy,algo9_momentum,algo10_freqRatio]
-
-# ================= Hàm dự đoán hybrid + confidence biến thiên =================
-def hybrid_predict(hist,last_dice_sum):
-    if not hist: return {"prediction":"Tài","confidence":50}
-    scoreT=scoreX=0
-    for fn in algos:
-        v=fn(hist)
-        if v=="Tài": scoreT+=1
-        else: scoreX+=1
-    pred="Tài" if scoreT>=scoreX else "Xỉu"
-    base_conf=(max(scoreT,scoreX)/len(algos))*50+50  # 50~100%
-    # Biến thiên theo tổng xúc xắc
-    if pred=="Tài":
-        confidence=base_conf+(last_dice_sum-11)*4
+    # === LỚP 1: Nhận dạng chuỗi lặp ===
+    if len(set(history[-3:])) == 1:
+        v1, w1 = history[-1], 0.9
+    elif history[-1] == history[-2]:
+        v1, w1 = history[-1], 0.75
     else:
-        confidence=base_conf+(10-last_dice_sum)*4
-    confidence=max(50,min(99,int(confidence)))
-    return {"prediction":pred,"confidence":confidence}
+        v1, w1 = ("Xỉu" if history[-1] == "Tài" else "Tài"), 0.55
+
+    # === LỚP 2: Dao động gần ===
+    flip = sum(history[i] != history[i-1] for i in range(-1, -5, -1))
+    v2 = "Tài" if flip % 2 == 0 else "Xỉu"
+    w2 = 0.7 if flip in (1, 3) else 0.6
+
+    # === LỚP 3: Tỷ lệ cầu nghiêng ===
+    recent = history[-12:] if len(history) >= 12 else history
+    tai, xiu = recent.count("Tài"), recent.count("Xỉu")
+    if abs(tai - xiu) >= 4:
+        v3 = "Tài" if tai < xiu else "Xỉu"
+        w3 = 0.85
+    else:
+        v3 = history[-1]
+        w3 = 0.65
+
+    # === LỚP 4: Cầu chu kỳ ===
+    if len(history) >= 6:
+        h = history[-6:]
+        if h[0] == h[3] and h[1] == h[4]:
+            v4, w4 = h[2], 0.9
+        else:
+            v4, w4 = ("Tài" if history[-1] == "Xỉu" else "Xỉu"), 0.65
+    else:
+        v4, w4 = v1, 0.6
+
+    # === LỚP 5: Entropy (xu hướng ngắn hạn) ===
+    entropy = abs(history[-5:].count("Tài") - history[-5:].count("Xỉu")) / 5
+    if entropy < 0.4:
+        v5, w5 = history[-1], 0.8
+    else:
+        v5, w5 = ("Xỉu" if history[-1] == "Tài" else "Tài"), 0.7
+
+    # === LỚP 6: Độ ổn định chuỗi ===
+    streak = 1
+    for i in range(-2, -len(history)-1, -1):
+        if history[i] == history[-1]:
+            streak += 1
+        else:
+            break
+    v6 = history[-1] if streak >= 3 else ("Xỉu" if history[-1] == "Tài" else "Tài")
+    w6 = min(0.6 + streak * 0.05, 0.9)
+
+    # === LỚP 7: Định hướng tổng thể ===
+    momentum = (tai - xiu) / len(recent)
+    if momentum > 0.2:
+        v7, w7 = "Tài", 0.8
+    elif momentum < -0.2:
+        v7, w7 = "Xỉu", 0.8
+    else:
+        v7, w7 = history[-1], 0.6
+
+    # === Tổng hợp votes ===
+    votes = [v1, v2, v3, v4, v5, v6, v7]
+    weights = [w1, w2, w3, w4, w5, w6, w7]
+    score_tai = sum(w for v, w in zip(votes, weights) if v == "Tài")
+    score_xiu = sum(w for v, w in zip(votes, weights) if v == "Xỉu")
+
+    du_doan = "Tài" if score_tai > score_xiu else "Xỉu"
+    do_tin_cay = round(abs(score_tai - score_xiu) / sum(weights) * 100 + 65, 1)
+    if do_tin_cay > 97: do_tin_cay = 97
+    if do_tin_cay < 70: do_tin_cay += 5
+
+    return {"du_doan": du_doan, "do_tin_cay": do_tin_cay}
+
 
 # ================= Xử lý WebSocket =================
-def on_message(ws,message):
-    global latest_result,history
+def on_message(ws, message):
+    global latest_result, history
     try:
-        data=json.loads(message)
-        if isinstance(data,dict) and "M" in data:
+        data = json.loads(message)
+        if isinstance(data, dict) and "M" in data:
             for m_item in data["M"]:
-                if "M" in m_item and m_item["M"]=="Md5sessionInfo":
-                    session_info=m_item["A"][0]
-                    session_id=session_info.get("SessionID")
-                    result=session_info.get("Result",{})
-                    d1=result.get("Dice1",-1)
-                    d2=result.get("Dice2",-1)
-                    d3=result.get("Dice3",-1)
-                    if d1!=-1 and d2!=-1 and d3!=-1:
-                        tx=get_tai_xiu(d1,d2,d3)
-                        with lock:
-                            latest_result["Phien"]=session_id
-                            latest_result["Xuc_xac_1"]=d1
-                            latest_result["Xuc_xac_2"]=d2
-                            latest_result["Xuc_xac_3"]=d3
-                            # cập nhật lịch sử
-                            history.append(tx)
-                            if len(history)>MAX_HISTORY: history.pop(0)
-                            # dự đoán
-                            pred=hybrid_predict(history,d1+d2+d3)
-                            latest_result["Du_doan"]=pred["prediction"]
-                            latest_result["Do_tin_cay"]=pred["confidence"]
-    except Exception as e:
-        print("Lỗi xử lý message:",e)
+                if "M" in m_item and m_item["M"] == "Md5sessionInfo":
+                    session_info = m_item["A"][0]
+                    session_id = session_info.get("SessionID")
+                    result = session_info.get("Result", {})
+                    d1 = result.get("Dice1", -1)
+                    d2 = result.get("Dice2", -1)
+                    d3 = result.get("Dice3", -1)
 
-def on_error(ws,error): print("WebSocket lỗi:",error)
-def on_close(ws,close_status_code,close_msg):
+                    if d1 != -1 and d2 != -1 and d3 != -1:
+                        ket_qua = get_tai_xiu(d1, d2, d3)
+                        with lock:
+                            latest_result["Phien"] = session_id
+                            latest_result["Xuc_xac_1"] = d1
+                            latest_result["Xuc_xac_2"] = d2
+                            latest_result["Xuc_xac_3"] = d3
+                            latest_result["Ket_qua"] = ket_qua
+
+                            history.append(ket_qua)
+                            if len(history) > MAX_HISTORY:
+                                history.pop(0)
+
+                            pred = pentter_ai_v4_8(history)
+                            latest_result["Du_doan_tiep"] = pred["du_doan"]
+                            latest_result["Do_tin_cay"] = pred["do_tin_cay"]
+
+    except Exception as e:
+        print("Lỗi xử lý message:", e)
+
+
+def on_error(ws, error):
+    print("WebSocket lỗi:", error)
+
+
+def on_close(ws, close_status_code, close_msg):
     print("WebSocket đóng, reconnect sau 5s...")
     time.sleep(5)
     start_ws_thread()
+
+
 def on_open(ws):
-    def ping(): 
+    def ping():
         while True:
             try:
-                ping_msg=json.dumps({"M":"PingPong","H":"md5luckydiceHub","I":0})
+                ping_msg = json.dumps({"M": "PingPong", "H": "md5luckydiceHub", "I": 0})
                 ws.send(ping_msg)
                 time.sleep(PING_INTERVAL)
-            except: break
-    threading.Thread(target=ping,daemon=True).start()
+            except:
+                break
+    threading.Thread(target=ping, daemon=True).start()
+
 
 def start_ws_thread():
-    ws=websocket.WebSocketApp(
+    ws = websocket.WebSocketApp(
         WS_URL,
         on_open=on_open,
         on_message=on_message,
         on_error=on_error,
         on_close=on_close
     )
-    ws.run_forever(ping_interval=10,ping_timeout=5)
+    ws.run_forever(ping_interval=10, ping_timeout=5)
+
 
 # ================= Flask API =================
-app=Flask(__name__)
+app = Flask(__name__)
 
 @app.route("/api/taixiumd5")
 def get_latest():
-    with lock: return jsonify(latest_result)
+    with lock:
+        return jsonify(latest_result)
 
 @app.route("/")
 def index():
-    return "✅ API Tài Xỉu Phiên + Xúc xắc + Dự đoán (tỷ lệ thay đổi) đang chạy | /api/taixiumd5"
+    return "✅ Pentter-AI v4.8 Elite đang chạy | /api/taixiumd5"
+
 
 # ================= Main =================
-if __name__=="__main__":
-    threading.Thread(target=start_ws_thread,daemon=True).start()
-    app.run(host="0.0.0.0",port=5000)
+if __name__ == "__main__":
+    threading.Thread(target=start_ws_thread, daemon=True).start()
+    app.run(host="0.0.0.0", port=5000)
