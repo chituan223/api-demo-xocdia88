@@ -3,185 +3,175 @@ import threading
 import websocket
 import json
 import time
-from typing import List, Tuple, Dict, Any, Callable
-import math
-import random
+from typing import List, Dict, Any, Tuple
 import statistics
 
-# ================= Cấu hình WebSocket =================
-WS_URL = "wss://taixiumd5.system32-cloudfare-356783752985678522.monster/signalr/reconnect?transport=webSockets&connectionToken=..." 
+# ================= CONFIGURATION =================
+# Lưu ý: connectionToken và access_token trong WS_URL thường thay đổi theo phiên đăng nhập.
+WS_URL = "wss://taixiumd5.system32-cloudfare-356783752985678522.monster/signalr/connect?transport=webSockets&connectionToken=..."
 PING_INTERVAL = 15
-MAX_HISTORY = 100 
+MAX_HISTORY = 150
 
-# ================= Biến toàn cục & Lock =================
+# ================= GLOBAL DATA =================
 lock = threading.Lock()
 results_history: List[str] = [] 
-dice_points_history: List[int] = [] # Chỉ lưu tổng điểm T để tính toán nhanh
+dice_totals: List[int] = []
 
-latest_result: Dict[str, Any] = {
+latest_state = {
     "Phien": None,
-    "Tong_diem": -1,
+    "Tong_diem": 0,
     "Ket_qua": None,
-    "Du_doan_tiep": "Đang chờ dữ liệu...",
+    "Du_doan_tiep": "Waiting...",
     "Do_tin_cay": 0.0,
-    "He_thong": "Ensemble-V3-Pro"
+    "Algorithm": "Stable-Technical-V4"
 }
 
-# ================= THUẬT TOÁN AI V3.0 (PHÂN TÍCH KỸ THUẬT) =================
+# ================= STABLE ALGORITHMS (NO RANDOM) =================
 
-class TechnicalAI:
+class StableAI:
     @staticmethod
-    def rsi_momentum(totals: List[int]) -> Tuple[str, float]:
-        """Chỉ số RSI (Relative Strength Index) - Nhận diện quá Tài/quá Xỉu."""
+    def rsi_logic(totals: List[int]) -> Tuple[str, float]:
+        """Tính chỉ số RSI thực tế để xác định vùng quá Tài/quá Xỉu."""
         if len(totals) < 14: return "Tài", 50.0
-        gains = [max(0, totals[i] - totals[i-1]) for i in range(-13, 0)]
-        losses = [max(0, totals[i-1] - totals[i]) for i in range(-13, 0)]
+        subset = totals[-14:]
+        gains = [max(0, subset[i] - subset[i-1]) for i in range(1, len(subset))]
+        losses = [max(0, subset[i-1] - subset[i]) for i in range(1, len(subset))]
+        
         avg_gain = sum(gains) / 14
         avg_loss = sum(losses) / 14
-        rs = avg_gain / (avg_loss + 0.0001)
+        if avg_loss == 0: return "Xỉu", 90.0 # Quá Tài tuyệt đối
+        
+        rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
         
-        if rsi > 70: return "Xỉu", 88.0  # RSI cao -> Quá Tài -> Đánh Xỉu
-        if rsi < 30: return "Tài", 88.0  # RSI thấp -> Quá Xỉu -> Đánh Tài
+        if rsi > 70: return "Xỉu", 85.0
+        if rsi < 30: return "Tài", 85.0
         return ("Tài" if rsi > 50 else "Xỉu"), 60.0
 
     @staticmethod
-    def bollinger_bands(totals: List[int]) -> Tuple[str, float]:
-        """Dải Bollinger - Dự báo sự bùng nổ hoặc hồi quy điểm số."""
-        if len(totals) < 20: return "Xỉu", 50.0
+    def bollinger_bands_logic(totals: List[int]) -> Tuple[str, float]:
+        """Tính dải Bollinger Bands để bắt điểm hồi quy."""
+        if len(totals) < 20: return "Tài", 50.0
         window = totals[-20:]
         sma = statistics.mean(window)
-        std_dev = statistics.stdev(window)
-        upper = sma + (1.8 * std_dev)
-        lower = sma - (1.8 * std_dev)
-        curr = totals[-1]
+        stdev = statistics.stdev(window)
         
-        if curr >= upper: return "Xỉu", 92.0 # Chạm biên trên -> Hồi quy về Xỉu
-        if curr <= lower: return "Tài", 92.0 # Chạm biên dưới -> Hồi quy về Tài
-        return ("Tài" if curr < sma else "Xỉu"), 65.0
+        current = totals[-1]
+        upper = sma + (2 * stdev)
+        lower = sma - (2 * stdev)
+        
+        if current >= upper: return "Xỉu", 95.0
+        if current <= lower: return "Tài", 95.0
+        return ("Tài" if current < sma else "Xỉu"), 65.0
 
     @staticmethod
-    def markov_pattern(history: List[str], depth: int = 3) -> Tuple[str, float]:
-        """Markov Chain - Tìm kiếm sự lặp lại của chuỗi ký tự (Cầu)."""
-        if len(history) < 20: return "Tài", 50.0
+    def markov_chain_logic(history: List[str], depth: int) -> Tuple[str, float]:
+        """Phân tích chuỗi xác suất dựa trên lịch sử phiên."""
+        if len(history) < 30: return "Xỉu", 50.0
         pattern = "".join([h[0] for h in history[-depth:]])
-        full_str = "".join([h[0] for h in history[:-1]])
-        t_count = full_str.count(pattern + "T")
-        x_count = full_str.count(pattern + "X")
+        full_text = "".join([h[0] for h in history[:-1]])
         
-        if t_count > x_count: return "Tài", 85.0
-        if x_count > t_count: return "Xỉu", 85.0
-        return history[-1], 50.0
-
-    @staticmethod
-    def bridge_detector(history: List[str]) -> Tuple[str, float]:
-        """Bắt cầu 1-1, 2-2 và Bệt dây."""
-        if len(history) < 5: return history[-1] if history else "Tài", 50.0
-        # Check Bệt
-        streak = 1
-        for i in range(len(history)-1, 0, -1):
-            if history[i] == history[i-1]: streak += 1
-            else: break
-        if streak >= 4: return history[-1], 80.0 # Theo bệt
+        t_next = full_text.count(pattern + "T")
+        x_next = full_text.count(pattern + "X")
         
-        # Check 1-1
-        if history[-1] != history[-2] and history[-2] != history[-3]:
-            return ("Xỉu" if history[-1] == "Tài" else "Tài"), 85.0
-        return history[-1], 55.0
+        total = t_next + x_next
+        if total == 0: return history[-1], 50.0
+        
+        conf = (max(t_next, x_next) / total) * 100
+        pred = "Tài" if t_next > x_count else "Xỉu"
+        return pred, conf
 
-# ================= HỆ THỐNG QUYẾT ĐỊNH (ENSEMBLE) =================
+# ================= ENSEMBLE SYSTEM =================
 
-def ensemble_predict(history: List[str], totals: List[int]) -> Dict[str, Any]:
+def calculate_next_move(history, totals) -> Dict[str, Any]:
     if len(history) < 15:
-        return {"du_doan": history[-1] if history else "Đang chờ", "do_tin_cay": 50.0}
-
-    # Danh sách các chuyên gia và trọng số uy tín
-    experts = [
-        TechnicalAI.rsi_momentum(totals),
-        TechnicalAI.bollinger_bands(totals),
-        TechnicalAI.markov_pattern(history, 2),
-        TechnicalAI.markov_pattern(history, 3),
-        TechnicalAI.bridge_detector(history)
+        return {"du_doan": "Chờ thêm dữ liệu", "conf": 0.0}
+    
+    # Gom kết quả từ các 'chuyên gia'
+    results = [
+        StableAI.rsi_logic(totals),
+        StableAI.bollinger_bands_logic(totals),
+        StableAI.markov_chain_logic(history, 2),
+        StableAI.markov_chain_logic(history, 3)
     ]
-
+    
     votes = {"Tài": 0.0, "Xỉu": 0.0}
-    for pred, conf in experts:
-        # Trọng số được tính bằng độ tin cậy của từng phương pháp
-        votes[pred] += conf
-
-    final_pred = "Tài" if votes["Tài"] > votes["Xỉu"] else "Xỉu"
-    total_score = votes["Tài"] + votes["Xỉu"]
+    for move, weight in results:
+        votes[move] += weight
+        
+    final_move = "Tài" if votes["Tài"] > votes["Xỉu"] else "Xỉu"
+    total_votes = votes["Tài"] + votes["Xỉu"]
+    final_conf = (votes[final_move] / total_votes) * 100
     
-    # Tính toán độ tin cậy dựa trên sự đồng thuận của các thuật toán
-    final_conf = (votes[final_pred] / total_score) * 100
-    # Chuẩn hóa về dải 60% - 98%
-    final_conf = 60 + (final_conf - 50) * 0.76
-    
-    return {"du_doan": final_pred, "do_tin_cay": round(min(final_conf, 98.8), 1)}
+    return {
+        "du_doan": final_move,
+        "conf": round(final_conf, 1)
+    }
 
-# ================= Xử lý WebSocket & Flask =================
+# ================= WEBSOCKET HANDLER =================
 
 def on_message(ws, message):
-    global latest_result, results_history, dice_points_history
+    global latest_state, results_history, dice_totals
     try:
         data = json.loads(message)
-        if isinstance(data, dict) and "M" in data:
-            for m_item in data["M"]:
-                if m_item.get("M") == "Md5sessionInfo":
-                    session_info = m_item["A"][0]
-                    res = session_info.get("Result", {})
-                    d1, d2, d3 = res.get("Dice1", 0), res.get("Dice2", 0), res.get("Dice3", 0)
-                    
-                    if d1 > 0:
+        # SignalR thường gửi dữ liệu trong mảng 'M' (Messages)
+        if "M" in data:
+            for m in data["M"]:
+                if m.get("M") == "Md5sessionInfo":
+                    info = m["A"][0]
+                    res = info.get("Result")
+                    if res:
+                        d1, d2, d3 = res["Dice1"], res["Dice2"], res["Dice3"]
                         total = d1 + d2 + d3
-                        sid = session_info.get("SessionID")
+                        sid = info.get("SessionID")
                         
                         with lock:
-                            if latest_result["Phien"] != sid:
-                                result_str = "Tài" if total >= 11 else "Xỉu"
-                                results_history.append(result_str)
-                                dice_points_history.append(total)
+                            if latest_state["Phien"] != sid:
+                                result_label = "Tài" if total >= 11 else "Xỉu"
                                 
+                                # Cập nhật lịch sử
+                                results_history.append(result_label)
+                                dice_totals.append(total)
                                 if len(results_history) > MAX_HISTORY:
                                     results_history.pop(0)
-                                    dice_points_history.pop(0)
-
-                                # Cập nhật phiên mới nhất
-                                latest_result["Phien"] = sid
-                                latest_result["Tong_diem"] = total
-                                latest_result["Ket_qua"] = result_str
+                                    dice_totals.pop(0)
                                 
-                                # Dự đoán cho phiên tiếp theo
-                                prediction = ensemble_predict(results_history, dice_points_history)
-                                latest_result["Du_doan_tiep"] = prediction["du_doan"]
-                                latest_result["Do_tin_cay"] = prediction["do_tin_cay"]
+                                # Lưu trạng thái phiên vừa xong
+                                latest_state["Phien"] = sid
+                                latest_state["Tong_diem"] = total
+                                latest_state["Ket_qua"] = result_label
                                 
-    except Exception as e: pass
-
-def on_open(ws):
-    def ping():
-        while True:
-            time.sleep(PING_INTERVAL)
-            try: ws.send("{}")
-            except: break
-    threading.Thread(target=ping, daemon=True).start()
+                                # Tính toán dự đoán cho phiên sắp tới
+                                prediction = calculate_next_move(results_history, dice_totals)
+                                latest_state["Du_doan_tiep"] = prediction["du_doan"]
+                                latest_state["Do_tin_cay"] = prediction["conf"]
+                                print(f"Phiên {sid}: {result_label} ({total}) -> Tiếp: {prediction['du_doan']}")
+    except: pass
 
 def start_ws():
     while True:
         try:
-            ws = websocket.WebSocketApp(WS_URL, on_open=on_open, on_message=on_message)
-            ws.run_forever()
+            # heartbeat SignalR thường là {} hoặc tin nhắn trống
+            ws = websocket.WebSocketApp(
+                WS_URL,
+                on_message=on_message,
+                on_open=lambda ws: print("WebSocket Connected"),
+                on_close=lambda ws, s, m: print("WebSocket Closed")
+            )
+            ws.run_forever(ping_interval=15)
         except: time.sleep(5)
+
+# ================= API SERVER =================
 
 app = Flask(__name__)
 
 @app.route("/api/taixiumd5")
-def get_data():
-    with lock: return jsonify(latest_result)
-
-@app.route("/")
-def index(): return "🚀 Pentter-AI v3.0 (Ensemble Technical) is running."
+def api():
+    with lock:
+        return jsonify(latest_state)
 
 if __name__ == "__main__":
+    # Chạy WebSocket trong luồng phụ
     threading.Thread(target=start_ws, daemon=True).start()
+    # Chạy API Server
     app.run(host="0.0.0.0", port=5000)
