@@ -8217,6 +8217,8 @@ prediction_table = {
 "XXXXXXXXXXXTX": "Tài",
 "XXXXXXXXXXXXT": "Xỉu",
 "XXXXXXXXXXXXX": "Xỉu",
+"TTTTTTTXTXXXX": "Tài"
+}
 
 # ================= VER =================
 def predict_ver():
